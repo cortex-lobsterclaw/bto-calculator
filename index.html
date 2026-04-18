@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BTO Calculator</title>
+  <style>
+    :root { --bg:#0b1020; --card:#121a33; --muted:#9fb0d3; --text:#eef3ff; --accent:#6da7ff; --ok:#6ee7b7; }
+    * { box-sizing: border-box; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    body { margin:0; background:linear-gradient(180deg,#0b1020,#0f1730); color:var(--text); min-height:100vh; display:grid; place-items:center; padding:24px; }
+    .wrap { width:min(900px,100%); display:grid; gap:16px; }
+    .card { background:var(--card); border:1px solid #22305f; border-radius:16px; padding:18px; box-shadow:0 8px 30px rgba(0,0,0,.25); }
+    h1 { margin:0 0 8px; font-size:1.5rem; }
+    p { margin:0; color:var(--muted); }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-top:14px; }
+    label { display:grid; gap:6px; font-size:.92rem; color:var(--muted); }
+    input { width:100%; background:#0b1228; color:var(--text); border:1px solid #2a3b72; border-radius:10px; padding:10px 12px; font-size:1rem; }
+    button { margin-top:14px; background:var(--accent); border:0; color:#06112a; font-weight:700; padding:11px 14px; border-radius:10px; cursor:pointer; }
+    .out { display:grid; gap:10px; margin-top:10px; }
+    .kpi { background:#0b1228; border:1px solid #27386d; border-radius:12px; padding:12px; }
+    .kpi .v { font-size:1.25rem; font-weight:700; }
+    .good { color:var(--ok); }
+    .warn { color:#ffd166; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>BTO Calculator</h1>
+      <p>Quick estimate for monthly mortgage, total interest, and affordability.</p>
+      <div class="grid">
+        <label>Flat Price (SGD)
+          <input id="price" type="number" value="550000" min="0" step="1000" />
+        </label>
+        <label>Down Payment (%)
+          <input id="downPct" type="number" value="20" min="0" max="100" step="1" />
+        </label>
+        <label>Interest Rate (% p.a.)
+          <input id="rate" type="number" value="2.6" min="0" step="0.01" />
+        </label>
+        <label>Loan Tenure (years)
+          <input id="years" type="number" value="25" min="1" max="35" step="1" />
+        </label>
+        <label>Monthly Household Income (SGD)
+          <input id="income" type="number" value="12000" min="0" step="100" />
+        </label>
+      </div>
+      <button id="calc">Calculate</button>
+    </div>
+
+    <div class="card out">
+      <div class="kpi"><div>Loan Amount</div><div id="loanAmt" class="v">-</div></div>
+      <div class="kpi"><div>Estimated Monthly Payment</div><div id="monthly" class="v">-</div></div>
+      <div class="kpi"><div>Total Interest Paid</div><div id="interest" class="v">-</div></div>
+      <div class="kpi"><div>Mortgage / Income Ratio</div><div id="ratio" class="v">-</div></div>
+      <div class="kpi"><div>Affordability Hint (30% rule)</div><div id="hint" class="v">-</div></div>
+    </div>
+  </div>
+
+  <script>
+    const fmt = n => new Intl.NumberFormat('en-SG', { style:'currency', currency:'SGD', maximumFractionDigits:0 }).format(n);
+
+    function calculate() {
+      const price = +document.getElementById('price').value || 0;
+      const downPct = (+document.getElementById('downPct').value || 0) / 100;
+      const annualRate = (+document.getElementById('rate').value || 0) / 100;
+      const years = +document.getElementById('years').value || 0;
+      const income = +document.getElementById('income').value || 0;
+
+      const loan = Math.max(0, price * (1 - downPct));
+      const n = years * 12;
+      const r = annualRate / 12;
+
+      let monthly = 0;
+      if (loan > 0 && n > 0) {
+        monthly = r === 0 ? loan / n : loan * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1);
+      }
+
+      const totalPaid = monthly * n;
+      const totalInterest = Math.max(0, totalPaid - loan);
+      const ratio = income > 0 ? monthly / income : 0;
+
+      document.getElementById('loanAmt').textContent = fmt(loan);
+      document.getElementById('monthly').textContent = fmt(monthly);
+      document.getElementById('interest').textContent = fmt(totalInterest);
+      document.getElementById('ratio').textContent = (ratio * 100).toFixed(1) + '%';
+
+      const hint = document.getElementById('hint');
+      if (ratio <= 0.3) {
+        hint.textContent = 'Looks manageable under 30% guideline';
+        hint.className = 'v good';
+      } else {
+        hint.textContent = 'Above 30% guideline — consider lower loan or longer tenure';
+        hint.className = 'v warn';
+      }
+    }
+
+    document.getElementById('calc').addEventListener('click', calculate);
+    calculate();
+  </script>
+</body>
+</html>
