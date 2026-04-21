@@ -287,6 +287,52 @@
     .btn-calculate:hover { background: #2563eb; }
     .btn-calculate:active { transform: scale(0.99); }
 
+    .btn-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .btn-secondary {
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px;
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      transition: background 0.15s, transform 0.1s, border-color 0.15s;
+      letter-spacing: 0.2px;
+    }
+    .btn-secondary:hover { background: var(--surface-3); border-color: #334155; }
+    .btn-secondary:active { transform: scale(0.99); }
+
+    .toast {
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      background: #111827;
+      color: #fff;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      z-index: 1000;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      pointer-events: none;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
     /* Results */
     .results-col {
       display: flex;
@@ -627,6 +673,12 @@
                 <div class="prefix-input"><span>$</span><input type="number" id="inc1" placeholder="5000" min="0" step="100" value="" /></div>
               </div>
               <div class="field">
+                <label>Annual Bonus (AW)
+                  <span class="tooltip"><span class="tooltip-icon">i</span><span class="tooltip-text">Expected yearly bonus subject to CPF Additional Wage (AW) cap. If monthly income is already at S$8,000, only S$6,000 bonus is CPF-able under S$102,000 annual ceiling.</span></span>
+                </label>
+                <div class="prefix-input"><span>$</span><input type="number" id="bonus1" placeholder="12000" min="0" step="500" value="" /></div>
+              </div>
+              <div class="field">
                 <label>Current CPF OA Balance
                   <span class="tooltip"><span class="tooltip-icon">i</span><span class="tooltip-text">Your existing Ordinary Account (OA) savings usable for housing.</span></span>
                 </label>
@@ -656,6 +708,10 @@
               <div class="field">
                 <label>Gross Monthly Income</label>
                 <div class="prefix-input"><span>$</span><input type="number" id="inc2" placeholder="5000" min="0" step="100" value="" /></div>
+              </div>
+              <div class="field">
+                <label>Annual Bonus (AW)</label>
+                <div class="prefix-input"><span>$</span><input type="number" id="bonus2" placeholder="12000" min="0" step="500" value="" /></div>
               </div>
               <div class="field">
                 <label>Current CPF OA Balance</label>
@@ -801,6 +857,17 @@
 
           <div class="fields-row" style="margin-top:10px;">
             <div class="field">
+              <label style="color:#93c5fd">Person 1 Future Annual Bonus (AW)</label>
+              <div class="prefix-input"><span>$</span><input type="number" id="futureBonus1" placeholder="15000" min="0" step="500" value="" /></div>
+            </div>
+            <div class="field">
+              <label style="color:#93c5fd">Person 2 Future Annual Bonus (AW)</label>
+              <div class="prefix-input"><span>$</span><input type="number" id="futureBonus2" placeholder="15000" min="0" step="500" value="" /></div>
+            </div>
+          </div>
+
+          <div class="fields-row" style="margin-top:10px;">
+            <div class="field">
               <label style="color:#93c5fd">Months until start work
                 <span class="tooltip"><span class="tooltip-icon">i</span><span class="tooltip-text">How many months from today until you/partner start earning. CPF only accumulates from this point. E.g. graduating in 6 months → enter 6.</span></span>
               </label>
@@ -820,7 +887,10 @@
         </div>
       </div>
 
-      <button class="btn-calculate" onclick="calculate()">Calculate →</button>
+      <div class="btn-row">
+        <button class="btn-calculate" onclick="calculate()">Calculate →</button>
+        <button class="btn-secondary" onclick="shareBreakdown()">Share breakdown</button>
+      </div>
 
     </div>
   </div>
@@ -911,6 +981,7 @@ const EHG_TIERS = [
 // ────────────────────────────────────────────────
 
 const OW_CEILING = 8000;
+const ANNUAL_WAGE_CEILING = 102000;
 
 function getCpfRate(age, citizenship) {
   let table;
@@ -925,18 +996,41 @@ function getOaRatio(age) {
   return OA_RATIOS.find(r => age <= r.maxAge)?.ratio ?? 0.0800;
 }
 
-function monthlyOaContribution(grossIncome, age, citizenship) {
-  if (citizenship === 'PR1') {
-    // PR1 OA ratio is lower; approximation using same allocation ratios on their contribution
-    const rate = getCpfRate(age, citizenship);
-    const cappedWage = Math.min(grossIncome, OW_CEILING);
-    const totalCpf = cappedWage * rate.total;
-    return totalCpf * getOaRatio(age);
-  }
+function getOaContributionBreakdown(grossIncome, annualBonus, age, citizenship) {
   const rate = getCpfRate(age, citizenship);
-  const cappedWage = Math.min(grossIncome, OW_CEILING);
-  const totalCpf = cappedWage * rate.total;
-  return totalCpf * getOaRatio(age);
+  const oaRatio = getOaRatio(age);
+
+  const cappedOwMonthly = Math.min(grossIncome, OW_CEILING);
+  const annualOwCpfable = cappedOwMonthly * 12;
+
+  // Additional Wage (AW) CPF-able amount is capped by annual ceiling.
+  // Example: OW at 8k/mo => 96k/year, so only 6k bonus is CPF-able.
+  const awRemaining = Math.max(0, ANNUAL_WAGE_CEILING - annualOwCpfable);
+  const awCpfable = Math.min(Math.max(0, annualBonus), awRemaining);
+
+  const owCpfMonthlyTotal = cappedOwMonthly * rate.total;
+  const owOaMonthly = owCpfMonthlyTotal * oaRatio;
+
+  const awCpfAnnualTotal = awCpfable * rate.total;
+  const awOaAnnual = awCpfAnnualTotal * oaRatio;
+  const awOaMonthlyEquivalent = awOaAnnual / 12;
+
+  return {
+    rate,
+    oaRatio,
+    cappedOwMonthly,
+    annualOwCpfable,
+    awRemaining,
+    awCpfable,
+    owOaMonthly,
+    awOaAnnual,
+    awOaMonthlyEquivalent,
+    totalOaMonthlyEquivalent: owOaMonthly + awOaMonthlyEquivalent,
+  };
+}
+
+function monthlyOaContribution(grossIncome, age, citizenship, annualBonus = 0) {
+  return getOaContributionBreakdown(grossIncome, annualBonus, age, citizenship).totalOaMonthlyEquivalent;
 }
 
 function getEhg(householdIncome, firstTimers) {
@@ -967,9 +1061,114 @@ function incomeEligible(householdIncome, flatType) {
 // TOGGLE
 // ────────────────────────────────────────────────
 
+function syncDeferredSection() {
+  document.getElementById('deferredSection').style.display = document.getElementById('deferredToggle').checked ? 'block' : 'none';
+}
+
 document.getElementById('deferredToggle').addEventListener('change', function() {
-  document.getElementById('deferredSection').style.display = this.checked ? 'block' : 'none';
+  syncDeferredSection();
 });
+
+const SHARE_FIELDS = [
+  'inc1', 'inc2', 'bonus1', 'bonus2', 'cpf1', 'cpf2',
+  'age1', 'age2', 'cit1', 'cit2',
+  'flatPrice', 'flatType', 'loanType', 'bankRate', 'tenure', 'buildTime',
+  'futureInc1', 'futureInc2', 'futureBonus1', 'futureBonus2',
+  'monthsToWork', 'monthsToAGL'
+];
+
+const SHARE_TOGGLES = ['deferredToggle', 'staggeredToggle', 'firstTimerToggle'];
+
+function buildShareParams() {
+  const params = new URLSearchParams();
+
+  SHARE_FIELDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const val = (el.value ?? '').toString().trim();
+    if (val !== '') params.set(id, val);
+  });
+
+  SHARE_TOGGLES.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    params.set(id, el.checked ? '1' : '0');
+  });
+
+  return params;
+}
+
+function applyShareParams() {
+  const params = new URLSearchParams(window.location.search);
+  if (!params.toString()) return false;
+
+  SHARE_FIELDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el || !params.has(id)) return;
+    el.value = params.get(id);
+  });
+
+  SHARE_TOGGLES.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el || !params.has(id)) return;
+    const raw = (params.get(id) || '').toLowerCase();
+    el.checked = raw === '1' || raw === 'true' || raw === 'yes';
+  });
+
+  syncDeferredSection();
+  return true;
+}
+
+function updateShareUrl() {
+  const params = buildShareParams();
+  const q = params.toString();
+  const next = q ? `${window.location.pathname}?${q}` : window.location.pathname;
+  window.history.replaceState({}, '', next);
+}
+
+function showToast(message) {
+  const existing = document.querySelector('.toast');
+  if (existing) existing.remove();
+
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+
+  requestAnimationFrame(() => toast.classList.add('show'));
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 220);
+  }, 1800);
+}
+
+async function shareBreakdown() {
+  calculate();
+
+  const shareUrl = `${window.location.origin}${window.location.pathname}${window.location.search}`;
+  const shareText = 'HDB BTO calculator breakdown';
+
+  try {
+    if (navigator.share) {
+      await navigator.share({
+        title: 'HDB BTO Loan Breakdown',
+        text: shareText,
+        url: shareUrl,
+      });
+      return;
+    }
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(shareUrl);
+      showToast('Share link copied ✅');
+      return;
+    }
+
+    prompt('Copy this share link:', shareUrl);
+  } catch (err) {
+    console.error('Share failed:', err);
+  }
+}
 
 // ────────────────────────────────────────────────
 // MAIN CALCULATE
@@ -978,6 +1177,8 @@ document.getElementById('deferredToggle').addEventListener('change', function() 
 function calculate() {
   const inc1 = parseFloat(document.getElementById('inc1').value) || 0;
   const inc2 = parseFloat(document.getElementById('inc2').value) || 0;
+  const bonus1 = parseFloat(document.getElementById('bonus1').value) || 0;
+  const bonus2 = parseFloat(document.getElementById('bonus2').value) || 0;
   const cpf1 = parseFloat(document.getElementById('cpf1').value) || 0;
   const cpf2 = parseFloat(document.getElementById('cpf2').value) || 0;
   const age1 = parseInt(document.getElementById('age1').value) || 28;
@@ -996,6 +1197,8 @@ function calculate() {
 
   const futureInc1 = deferred ? (parseFloat(document.getElementById('futureInc1').value) || inc1) : inc1;
   const futureInc2 = deferred ? (parseFloat(document.getElementById('futureInc2').value) || inc2) : inc2;
+  const futureBonus1 = deferred ? (parseFloat(document.getElementById('futureBonus1').value) || bonus1) : bonus1;
+  const futureBonus2 = deferred ? (parseFloat(document.getElementById('futureBonus2').value) || bonus2) : bonus2;
   // Timing fields (only relevant when deferred is on)
   const monthsToWork = deferred ? (parseInt(document.getElementById('monthsToWork').value) || 0) : 0;
   const monthsToAGL  = deferred ? (parseInt(document.getElementById('monthsToAGL').value)  || 12) : 9;
@@ -1010,9 +1213,17 @@ function calculate() {
   const monthlyRate = annualRate / 100 / 12;
   const nper = tenure * 12;
 
-  // ── CPF OA monthly contributions (using future income for deferred) ──
-  const oa1Monthly = monthlyOaContribution(deferred ? futureInc1 : inc1, age1, cit1);
-  const oa2Monthly = monthlyOaContribution(deferred ? futureInc2 : inc2, age2, cit2);
+  // ── CPF OA monthly contributions (includes AW bonus CPF under annual wage cap) ──
+  const activeInc1 = deferred ? futureInc1 : inc1;
+  const activeInc2 = deferred ? futureInc2 : inc2;
+  const activeBonus1 = deferred ? futureBonus1 : bonus1;
+  const activeBonus2 = deferred ? futureBonus2 : bonus2;
+
+  const oaBreakdown1 = getOaContributionBreakdown(activeInc1, activeBonus1, age1, cit1);
+  const oaBreakdown2 = getOaContributionBreakdown(activeInc2, activeBonus2, age2, cit2);
+
+  const oa1Monthly = oaBreakdown1.totalOaMonthlyEquivalent;
+  const oa2Monthly = oaBreakdown2.totalOaMonthlyEquivalent;
   const totalOaMonthly = oa1Monthly + oa2Monthly;
 
   const cpfSavingsRate = 0.025 / 12;
@@ -1186,6 +1397,8 @@ function calculate() {
     return;
   }
 
+  updateShareUrl();
+
   let html = '';
 
   // ─── ELIGIBILITY BANNER ───
@@ -1344,28 +1557,24 @@ function calculate() {
   html += `<div class="panel-header"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="#94a3b8" stroke-width="1.2" fill="none"/><path d="M5 7l2 2 3-3" stroke="#94a3b8" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="panel-title">CPF Contribution Detail (2026)</span></div>`;
   html += `<div class="panel-body">`;
 
-  function renderCpfPerson(incN, ageN, citN, label) {
-    const rate = getCpfRate(ageN, citN);
-    const cappedWage = Math.min(incN, OW_CEILING);
-    const totalCpf = cappedWage * rate.total;
-    const oaMonthly = monthlyOaContribution(incN, ageN, citN);
-    const saMonthly = totalCpf - oaMonthly - (totalCpf * (OA_RATIOS.find(r => ageN <= r.maxAge)?.ratio ?? 0.08) * 0 + 0);
-    // Use actual allocation ratios
-    const oaR = OA_RATIOS.find(r => ageN <= r.maxAge)?.ratio ?? 0.08;
-    const sa = totalCpf * (1 - oaR) * 0.6; // rough split for SA
-    const ma = totalCpf * (1 - oaR) * 0.4;
+  function renderCpfPerson(incN, bonusN, ageN, citN, label) {
+    const b = getOaContributionBreakdown(incN, bonusN, ageN, citN);
 
-    let r = `<div class="info-row"><span class="key" style="font-weight:600;color:var(--text)">${label} (Age ${ageN}${citN !== 'SC' ? ', ' + citN : ''})</span><span class="val">${(rate.total * 100).toFixed(1)}% total CPF</span></div>`;
-    r += `<div class="info-row"><span class="key" style="padding-left:12px">Gross income (CPF capped at S$8,000)</span><span class="val">${fmtMoney(incN)} → ${fmtMoney(cappedWage)}</span></div>`;
-    r += `<div class="info-row"><span class="key" style="padding-left:12px">Employee contribution (${(rate.employee * 100).toFixed(1)}%)</span><span class="val">${fmtMoney(Math.round(cappedWage * rate.employee))}/mo</span></div>`;
-    r += `<div class="info-row"><span class="key" style="padding-left:12px">Employer contribution (${(rate.employer * 100).toFixed(1)}%)</span><span class="val">${fmtMoney(Math.round(cappedWage * rate.employer))}/mo</span></div>`;
-    r += `<div class="info-row"><span class="key" style="padding-left:12px">→ Allocated to OA (${(oaR * 100).toFixed(1)}% of total CPF)</span><span class="val blue">${fmtMoney(Math.round(oaMonthly))}/mo</span></div>`;
+    let r = `<div class="info-row"><span class="key" style="font-weight:600;color:var(--text)">${label} (Age ${ageN}${citN !== 'SC' ? ', ' + citN : ''})</span><span class="val">${(b.rate.total * 100).toFixed(1)}% total CPF</span></div>`;
+    r += `<div class="info-row"><span class="key" style="padding-left:12px">Gross monthly income (OW capped at S$8,000)</span><span class="val">${fmtMoney(incN)} → ${fmtMoney(b.cappedOwMonthly)}</span></div>`;
+    r += `<div class="info-row"><span class="key" style="padding-left:12px">Annual bonus (AW entered)</span><span class="val">${fmtMoney(bonusN)}</span></div>`;
+    r += `<div class="info-row"><span class="key" style="padding-left:12px">CPF-able bonus after annual cap (S$102,000 - OW)</span><span class="val">${fmtMoney(Math.round(b.awCpfable))}</span></div>`;
+    r += `<div class="info-row"><span class="key" style="padding-left:12px">Employee contribution (${(b.rate.employee * 100).toFixed(1)}%) on OW</span><span class="val">${fmtMoney(Math.round(b.cappedOwMonthly * b.rate.employee))}/mo</span></div>`;
+    r += `<div class="info-row"><span class="key" style="padding-left:12px">Employer contribution (${(b.rate.employer * 100).toFixed(1)}%) on OW</span><span class="val">${fmtMoney(Math.round(b.cappedOwMonthly * b.rate.employer))}/mo</span></div>`;
+    r += `<div class="info-row"><span class="key" style="padding-left:12px">OA from OW</span><span class="val blue">${fmtMoney(Math.round(b.owOaMonthly))}/mo</span></div>`;
+    r += `<div class="info-row"><span class="key" style="padding-left:12px">OA from bonus (AW) monthly equivalent</span><span class="val blue">${fmtMoney(Math.round(b.awOaMonthlyEquivalent))}/mo</span></div>`;
+    r += `<div class="info-row"><span class="key" style="padding-left:12px">→ Total OA monthly equivalent</span><span class="val blue">${fmtMoney(Math.round(b.totalOaMonthlyEquivalent))}/mo</span></div>`;
     return r;
   }
 
-  html += renderCpfPerson(deferred ? futureInc1 : inc1, age1, cit1, 'Person 1');
+  html += renderCpfPerson(activeInc1, activeBonus1, age1, cit1, 'Person 1');
   html += `<div style="height:8px;border-bottom:1px solid var(--border);margin:0 -4px;"></div>`;
-  html += renderCpfPerson(deferred ? futureInc2 : inc2, age2, cit2, 'Person 2');
+  html += renderCpfPerson(activeInc2, activeBonus2, age2, cit2, 'Person 2');
   html += `<div class="info-row" style="margin-top:4px;"><span class="key" style="font-weight:600">Combined OA/month</span><span class="val blue" style="font-size:14px">${fmtMoney(Math.round(totalOaMonthly))}/mo</span></div>`;
   html += `<div class="info-row"><span class="key">Projected OA at key collection (${buildTime} yrs, incl. EHG)</span><span class="val green">${fmtMoney(Math.round(cpfAtKeyCollection + ehg))}</span></div>`;
 
@@ -1412,6 +1621,12 @@ function calcBSD(price) {
   }
   return bsd;
 }
+
+window.addEventListener('DOMContentLoaded', () => {
+  const hasShareParams = applyShareParams();
+  if (!hasShareParams) syncDeferredSection();
+  if (hasShareParams) calculate();
+});
 </script>
 
 <script data-pplx-inline-edit>
