@@ -1051,6 +1051,60 @@ function pmt(rate, nper, pv) {
   return pv * (rate * Math.pow(1 + rate, nper)) / (Math.pow(1 + rate, nper) - 1);
 }
 
+function estimateCpfInterestEarned({
+  initialCpf,
+  oaMonthly,
+  monthlyRepayment,
+  cpfSavingsRate,
+  monthsToWork,
+  monthsToAGL,
+  totalMonthsToKeys,
+  effectiveNper,
+  stage1CpfUsed,
+  stage2CpfUsed,
+  ehg,
+}) {
+  let balance = Math.max(0, initialCpf);
+  let interestEarned = 0;
+
+  // From now to key collection (construction/deferred period)
+  for (let m = 1; m <= totalMonthsToKeys; m++) {
+    const monthlyInterest = balance * cpfSavingsRate;
+    balance += monthlyInterest;
+    interestEarned += monthlyInterest;
+
+    if (m > monthsToWork) {
+      balance += oaMonthly;
+    }
+
+    if (m === monthsToAGL) {
+      balance = Math.max(0, balance - stage1CpfUsed);
+    }
+
+    if (m === totalMonthsToKeys) {
+      // EHG grant is credited into OA at key collection
+      balance += ehg;
+      balance = Math.max(0, balance - stage2CpfUsed);
+    }
+  }
+
+  // During loan repayment period
+  const cpfUsedPerMonth = Math.min(monthlyRepayment, oaMonthly);
+  for (let m = 1; m <= effectiveNper; m++) {
+    const monthlyInterest = balance * cpfSavingsRate;
+    balance += monthlyInterest;
+    interestEarned += monthlyInterest;
+
+    balance += oaMonthly;
+    balance = Math.max(0, balance - cpfUsedPerMonth);
+  }
+
+  return {
+    interestEarned,
+    endingBalance: balance,
+  };
+}
+
 function incomeEligible(householdIncome, flatType) {
   if (flatType === '2room') return householdIncome <= 7000;
   if (flatType === '3room-special') return householdIncome <= 7000;
@@ -1372,6 +1426,23 @@ function calculate() {
   const cpfCoversFullPayment = totalOaMonthly >= monthlyRepayment;
   const cashShortfall = Math.max(0, monthlyRepayment - totalOaMonthly);
 
+  // ── CPF interest perspective (for net financing cost view) ──
+  const cpfInterestModel = estimateCpfInterestEarned({
+    initialCpf: currentTotalCpf,
+    oaMonthly: totalOaMonthly,
+    monthlyRepayment,
+    cpfSavingsRate,
+    monthsToWork,
+    monthsToAGL,
+    totalMonthsToKeys,
+    effectiveNper,
+    stage1CpfUsed,
+    stage2CpfUsed,
+    ehg,
+  });
+  const estimatedCpfInterestEarned = cpfInterestModel.interestEarned;
+  const netFinancingCost = totalInterest - estimatedCpfInterestEarned;
+
   // ── CPF OA projection at year 5, 10, 25 ──
   function cpfBalance(months) {
     const fv1 = cpf1 * Math.pow(1 + cpfSavingsRate, months + constructionMonths);
@@ -1593,8 +1664,11 @@ function calculate() {
   html += `<div class="info-row"><span class="key">EHG grant received</span><span class="val green">${fmtMoney(ehg)}</span></div>`;
   html += `<div class="info-row"><span class="key">Buyer's Stamp Duty (BSD)</span><span class="val amber">${fmtMoney(Math.round(bsd))}</span></div>`;
   html += `<div class="info-row"><span class="key">Est. total interest paid over loan</span><span class="val red">${fmtMoney(Math.round(totalInterest))}</span></div>`;
+  html += `<div class="info-row"><span class="key">Est. CPF OA interest earned (model)</span><span class="val blue">${fmtMoney(Math.round(estimatedCpfInterestEarned))}</span></div>`;
+  html += `<div class="info-row"><span class="key">Net financing cost (interest − CPF OA interest)</span><span class="val ${netFinancingCost > 0 ? 'amber' : 'green'}">${fmtMoney(Math.round(netFinancingCost))}</span></div>`;
   html += `<div class="info-row"><span class="key">Total cost of ownership (price + interest + BSD)</span><span class="val">${fmtMoney(Math.round(flatPrice + totalInterest + bsd))}</span></div>`;
   html += `<div class="info-row"><span class="key">Est. cash needed (upfront + monthly shortfall)</span><span class="val ${totalCashNeeded < 50000 ? 'green' : 'amber'}">${fmtMoney(Math.round(totalCashNeeded))}</span></div>`;
+  html += `<div class="alert alert-blue"><span class="alert-icon">i</span><div><strong>Net financing cost</strong> is an estimate: CPF OA interest is modelled from current OA, future OA contributions (including bonus AW cap), staged CPF usage, EHG crediting, and monthly loan CPF deductions.</div></div>`;
 
   html += `</div></div>`;
 
