@@ -1994,8 +1994,8 @@ function closeCpfModal() {
 function generateCpfTimeline() {
   // Get all the current form values
   const flatPrice = parseFloat(document.getElementById('flatPrice').value) || 0;
-  const inc1 = parseFloat(document.getElementById('income1').value) || 0;
-  const inc2 = parseFloat(document.getElementById('income2').value) || 0;
+  const inc1 = parseFloat(document.getElementById('inc1').value) || 0;
+  const inc2 = parseFloat(document.getElementById('inc2').value) || 0;
   const cpf1 = parseFloat(document.getElementById('cpf1').value) || 0;
   const cpf2 = parseFloat(document.getElementById('cpf2').value) || 0;
   const age1 = parseInt(document.getElementById('age1').value) || 30;
@@ -2005,10 +2005,10 @@ function generateCpfTimeline() {
   const buildYears = parseInt(document.getElementById('buildYears').value) || 3;
   const buildMonths = parseInt(document.getElementById('buildMonths').value) || 0;
   const buildTimeMonths = buildYears * 12 + buildMonths;
-  const deferred = document.getElementById('deferred').checked;
+  const deferred = document.getElementById('deferredToggle').checked;
   
-  const futureInc1 = parseFloat(document.getElementById('futureIncome1').value) || inc1;
-  const futureInc2 = parseFloat(document.getElementById('futureIncome2').value) || inc2;
+  const futureInc1 = parseFloat(document.getElementById('futureInc1').value) || inc1;
+  const futureInc2 = parseFloat(document.getElementById('futureInc2').value) || inc2;
   
   // Use future income if deferred, else current
   const hhi1 = deferred ? futureInc1 : inc1;
@@ -2024,7 +2024,7 @@ function generateCpfTimeline() {
   const totalOaMonthly = oa1Monthly + oa2Monthly;
   
   // EHG
-  const ehg = getEHG(householdIncome);
+  const ehg = getEhg(householdIncome, true);
   
   // Loan calculation
   const annualRate = loanType === 'hdb' ? 2.6 : (parseFloat(document.getElementById('bankRate').value) || 1.6);
