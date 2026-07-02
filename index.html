@@ -2006,6 +2006,7 @@ function generateCpfTimeline() {
   const buildMonths = parseInt(document.getElementById('buildMonths').value) || 0;
   const buildTimeMonths = buildYears * 12 + buildMonths;
   const deferred = document.getElementById('deferredToggle').checked;
+  const staggered = document.getElementById('staggeredToggle').checked;
   
   const futureInc1 = parseFloat(document.getElementById('futureInc1').value) || inc1;
   const futureInc2 = parseFloat(document.getElementById('futureInc2').value) || inc2;
@@ -2038,13 +2039,30 @@ function generateCpfTimeline() {
   // Monthly repayment
   const monthlyRepayment = pmt(monthlyRate, tenure * 12, loanDrawdown);
   
-  // Staged payment percentages
-  let stage1Pct = 0.10;
-  let stage2Pct = 0.15;
-  if (loanType === 'bank') {
-    stage1Pct = 0.20;
-    stage2Pct = 0.05;
+  // Staged payment percentages — MUST match main calculator logic
+  let stage1Pct, stage2Pct;
+  if (deferred && staggered) {
+    stage1Pct = 0.025;
+    stage2Pct = 0.225;
+  } else if (loanType === 'hdb') {
+    if (staggered) {
+      stage1Pct = 0.05;
+      stage2Pct = 0.20;
+    } else {
+      stage1Pct = 0.10;
+      stage2Pct = 0.15;
+    }
+  } else {
+    // Bank loan
+    if (staggered) {
+      stage1Pct = 0.10;
+      stage2Pct = 0.15;
+    } else {
+      stage1Pct = 0.20;
+      stage2Pct = 0.05;
+    }
   }
+  
   const stage1Amount = flatPrice * stage1Pct;
   const stage2Amount = flatPrice * stage2Pct;
   
@@ -2141,7 +2159,7 @@ function renderCpfTimelineModal() {
       <td class="mono ${t.balance < 10000 ? 'red' : 'green'}">${fmtMoney(Math.round(t.balance))}</td>
       <td class="mono green">+${fmtMoney(Math.round(t.contribution))}</td>
       <td class="mono red">-${fmtMoney(Math.round(t.deduction))}</td>
-      <td class="mono ${t.shortfall > 0 ? 'red' : 'green'}">${t.shortfall > 0 ? 'S$' + fmtMoney(Math.round(t.shortfall)) + '/mo' : 'None'}</td>
+      <td class="mono ${t.shortfall > 0 ? 'red' : 'green'}">${t.shortfall > 0 ? fmtMoney(Math.round(t.shortfall)) + '/mo' : 'None'}</td>
     </tr>`;
   }
   document.getElementById('cpfTableBody').innerHTML = tbody;
