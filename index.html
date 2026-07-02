@@ -1421,32 +1421,6 @@ function calculate() {
   // ── EHG Grant ──
   const ehg = firstTimers ? getEhg(assessmentHHI, true) : 0;
 
-  // ── CPF at key collection ──
-  // After Stage 1 payment at AGL, remaining CPF continues growing
-  // Plus new contributions from AGL to key collection
-  const balanceAfterStage1 = Math.max(0, cpfAtAGL - stage1CpfUsed);
-  
-  // Months from AGL to key collection = buildTimeMonths (construction period)
-  const monthsAGLToKeys = buildTimeMonths;
-  const cpfContribMonthsAfterAGL = Math.max(0, monthsAGLToKeys - Math.max(0, monthsToWork - monthsToAGL));
-  
-  // Grow the remaining balance from AGL to key collection
-  const fvAfterStage1 = balanceAfterStage1 * Math.pow(1 + cpfSavingsRate, monthsAGLToKeys);
-  
-  // Contributions during construction period (after AGL)
-  const fvContribAfterAGL1 = cpfContribMonthsAfterAGL > 0
-    ? oa1Monthly * ((Math.pow(1 + cpfSavingsRate, cpfContribMonthsAfterAGL) - 1) / cpfSavingsRate)
-    : 0;
-  const fvContribAfterAGL2 = cpfContribMonthsAfterAGL > 0
-    ? oa2Monthly * ((Math.pow(1 + cpfSavingsRate, cpfContribMonthsAfterAGL) - 1) / cpfSavingsRate)
-    : 0;
-  
-  // Total CPF at key collection before EHG
-  const cpfAtKeyCollectionBeforeEHG = fvAfterStage1 + fvContribAfterAGL1 + fvContribAfterAGL2;
-  
-  // Add EHG (credited to OA at key collection)
-  const cpfAtKeyCollection = cpfAtKeyCollectionBeforeEHG + ehg;
-
   // ── Eligibility checks ──
   const eligibleByIncome = incomeEligible(currentHHI, flatType);
   const loanEligible = loanType === 'hdb' ? assessmentHHI <= 14000 : true;
@@ -1530,6 +1504,32 @@ function calculate() {
   const stage1Cash = loanType === 'hdb'
     ? Math.max(0, stage1Amount - stage1CpfUsed)
     : (flatPrice * 0.05) + Math.max(0, (stage1Amount - flatPrice * 0.05) - Math.min(Math.max(0, stage1Amount - flatPrice * 0.05), cpfAvailAtAGL));
+
+  // ── CPF at key collection ──
+  // After Stage 1 payment at AGL, remaining CPF continues growing
+  // Plus new contributions from AGL to key collection
+  const balanceAfterStage1 = Math.max(0, cpfAtAGL - stage1CpfUsed);
+
+  // Months from AGL to key collection = buildTimeMonths (construction period)
+  const monthsAGLToKeys = buildTimeMonths;
+  const cpfContribMonthsAfterAGL = Math.max(0, monthsAGLToKeys - Math.max(0, monthsToWork - monthsToAGL));
+
+  // Grow the remaining balance from AGL to key collection
+  const fvAfterStage1 = balanceAfterStage1 * Math.pow(1 + cpfSavingsRate, monthsAGLToKeys);
+
+  // Contributions during construction period (after AGL)
+  const fvContribAfterAGL1 = cpfContribMonthsAfterAGL > 0
+    ? oa1Monthly * ((Math.pow(1 + cpfSavingsRate, cpfContribMonthsAfterAGL) - 1) / cpfSavingsRate)
+    : 0;
+  const fvContribAfterAGL2 = cpfContribMonthsAfterAGL > 0
+    ? oa2Monthly * ((Math.pow(1 + cpfSavingsRate, cpfContribMonthsAfterAGL) - 1) / cpfSavingsRate)
+    : 0;
+
+  // Total CPF at key collection before EHG
+  const cpfAtKeyCollectionBeforeEHG = fvAfterStage1 + fvContribAfterAGL1 + fvContribAfterAGL2;
+
+  // Add EHG (credited to OA at key collection)
+  const cpfAtKeyCollection = cpfAtKeyCollectionBeforeEHG + ehg;
 
   // Stage 2: key collection — cpfAtKeyCollection already includes EHG and is net of Stage 1
   const stage2TotalCpfAvail = Math.max(0, cpfAtKeyCollection);
