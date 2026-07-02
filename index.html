@@ -27,6 +27,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -638,6 +639,68 @@
     }
 
     .fullwidth { grid-column: 1 / -1; }
+
+    /* Modal */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(4px);
+      overflow-y: auto;
+    }
+    .modal.show { display: flex; align-items: flex-start; justify-content: center; padding: 40px 20px; }
+    .modal-content {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 900px;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: var(--surface);
+      z-index: 10;
+    }
+    .modal-header h3 { font-size: 14px; font-weight: 600; margin: 0; }
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 20px;
+      cursor: pointer;
+      padding: 0 4px;
+    }
+    .modal-close:hover { color: var(--text); }
+    .modal-body { padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+    .chart-container { width: 100%; height: 300px; }
+    .table-container { overflow-x: auto; }
+
+    .btn-interest {
+      background: var(--surface-2);
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      border-radius: var(--radius-sm);
+      padding: 8px 14px;
+      font-family: 'Inter', sans-serif;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-interest:hover { background: var(--accent-glow); }
   </style>
 </head>
 <body>
@@ -801,11 +864,19 @@
               </label>
               <input type="number" id="tenure" placeholder="25" min="5" max="30" step="1" value="25" />
             </div>
+          </div>
+          <div class="fields-row">
             <div class="field">
               <label>BTO Construction (years)
-                <span class="tooltip"><span class="tooltip-icon">i</span><span class="tooltip-text">Typical BTO build time. ~3–5 years. Key collection is when final payment and loan drawdown happen.</span></span>
+                <span class="tooltip"><span class="tooltip-icon">i</span><span class="tooltip-text">Years portion of construction time. Key collection is when final payment and loan drawdown happen.</span></span>
               </label>
-              <input type="number" id="buildTime" placeholder="4" min="2" max="6" step="1" value="4" />
+              <input type="number" id="buildYears" placeholder="3" min="0" max="6" step="1" value="3" />
+            </div>
+            <div class="field">
+              <label>BTO Construction (months)
+                <span class="tooltip"><span class="tooltip-icon">i</span><span class="tooltip-text">Additional months on top of years. E.g., 3 years 6 months = enter 3 and 6.</span></span>
+              </label>
+              <input type="number" id="buildMonths" placeholder="0" min="0" max="11" step="1" value="0" />
             </div>
           </div>
         </div>
@@ -931,6 +1002,36 @@
 
 <div class="footer">
   <strong>Disclaimer:</strong> This calculator is for estimation purposes only based on publicly available HDB/CPF guidelines as of 2026. Actual eligibility and loan amounts depend on HDB's formal assessment via the HDB Flat Eligibility (HFE) letter. Always verify with <a href="https://www.hdb.gov.sg" target="_blank">hdb.gov.sg</a> and <a href="https://www.cpf.gov.sg" target="_blank">cpf.gov.sg</a>. Key rates: CPF OW ceiling S$8,000 (Jan 2026); HDB concessionary interest 2.6% p.a.; LTV 75% (Aug 2024); MSR 30%; EHG up to S$120,000 for families (2024–2025 enhancements).
+</div>
+
+<!-- Year-by-Year Interest Breakdown Modal -->
+<div id="interestModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>📊 Year-by-Year Interest Breakdown</h3>
+      <button class="modal-close" onclick="closeInterestModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="chart-container">
+        <canvas id="interestChart"></canvas>
+      </div>
+      <div class="table-container">
+        <table class="stages-table" id="yearlyTable">
+          <thead>
+            <tr>
+              <th>Year</th>
+              <th>Starting Balance</th>
+              <th>Annual Interest</th>
+              <th>Principal Paid</th>
+              <th>Ending Balance</th>
+              <th>Cumulative Interest</th>
+            </tr>
+          </thead>
+          <tbody id="yearlyTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -1146,7 +1247,7 @@ document.getElementById('deferredToggle').addEventListener('change', function() 
 const SHARE_FIELDS = [
   'inc1', 'inc2', 'bonus1', 'bonus2', 'cpf1', 'cpf2',
   'age1', 'age2', 'cit1', 'cit2',
-  'flatPrice', 'flatType', 'loanType', 'bankRate', 'tenure', 'buildTime',
+  'flatPrice', 'flatType', 'loanType', 'bankRate', 'tenure', 'buildYears', 'buildMonths',
   'futureInc1', 'futureInc2', 'futureBonus1', 'futureBonus2',
   'monthsToWork', 'monthsToAGL'
 ];
@@ -1264,7 +1365,10 @@ function calculate() {
   const loanType = document.getElementById('loanType').value;
   const bankRate = parseFloat(document.getElementById('bankRate').value) || 1.6;
   const tenure = parseInt(document.getElementById('tenure').value) || 25;
-  const buildTime = parseInt(document.getElementById('buildTime').value) || 4;
+  const buildYears = parseInt(document.getElementById('buildYears').value) || 3;
+  const buildMonths = parseInt(document.getElementById('buildMonths').value) || 0;
+  const buildTimeMonths = buildYears * 12 + buildMonths;
+  const buildTime = buildYears + buildMonths / 12; // for display purposes
   const deferred = document.getElementById('deferredToggle').checked;
   const staggered = document.getElementById('staggeredToggle').checked;
   const firstTimers = document.getElementById('firstTimerToggle').checked;
@@ -1321,8 +1425,8 @@ function calculate() {
   const cpfAtAGL = fvCpfAGL1 + fvCpfAGL2 + fvContribAGL1 + fvContribAGL2;
 
   // ── CPF at key collection ──
-  // Total months from today to key collection = monthsToAGL + buildTime*12
-  const totalMonthsToKeys = monthsToAGL + buildTime * 12;
+  // Total months from today to key collection = monthsToAGL + buildTimeMonths
+  const totalMonthsToKeys = monthsToAGL + buildTimeMonths;
   const cpfContribMonthsKeys = Math.max(0, totalMonthsToKeys - monthsToWork);
   const fvCpf1 = cpf1 * Math.pow(1 + cpfSavingsRate, totalMonthsToKeys);
   const fvCpf2 = cpf2 * Math.pow(1 + cpfSavingsRate, totalMonthsToKeys);
@@ -1465,10 +1569,10 @@ function calculate() {
 
   // ── CPF OA projection at year 5, 10, 25 ──
   function cpfBalance(months) {
-    const fv1 = cpf1 * Math.pow(1 + cpfSavingsRate, months + constructionMonths);
-    const fv2 = cpf2 * Math.pow(1 + cpfSavingsRate, months + constructionMonths);
-    const fc1 = oa1Monthly * ((Math.pow(1 + cpfSavingsRate, months + constructionMonths) - 1) / cpfSavingsRate);
-    const fc2 = oa2Monthly * ((Math.pow(1 + cpfSavingsRate, months + constructionMonths) - 1) / cpfSavingsRate);
+    const fv1 = cpf1 * Math.pow(1 + cpfSavingsRate, months + buildTimeMonths);
+    const fv2 = cpf2 * Math.pow(1 + cpfSavingsRate, months + buildTimeMonths);
+    const fc1 = oa1Monthly * ((Math.pow(1 + cpfSavingsRate, months + buildTimeMonths) - 1) / cpfSavingsRate);
+    const fc2 = oa2Monthly * ((Math.pow(1 + cpfSavingsRate, months + buildTimeMonths) - 1) / cpfSavingsRate);
     // Minus monthly deductions towards loan
     const totalContrib = fv1 + fv2 + fc1 + fc2;
     return totalContrib;
@@ -1613,7 +1717,7 @@ function calculate() {
 
   // Construction period note
   html += `<tr>
-    <td><strong>Construction Period</strong><br><span style="color:var(--text-dim);font-size:11px">~${buildTime} years</span></td>
+    <td><strong>Construction Period</strong><br><span style="color:var(--text-dim);font-size:11px">~${buildYears}y ${buildMonths}m</span></td>
     <td class="mono">—</td>
     <td class="mono"><span class="tag tag-cpf">Accumulating</span></td>
     <td class="mono">—</td>
@@ -1624,7 +1728,7 @@ function calculate() {
   const bsd = calcBSD(flatPrice);
   const stage2Total = stage2Amount + bsd;
   html += `<tr>
-    <td><strong>Key Collection</strong><br><span style="color:var(--text-dim);font-size:11px">~${buildTime} yrs after AGL</span></td>
+    <td><strong>Key Collection</strong><br><span style="color:var(--text-dim);font-size:11px">~${(buildTimeMonths / 12).toFixed(1)} yrs after AGL</span></td>
     <td class="mono">${fmtMoney(Math.round(stage2Total))}</td>
     <td class="mono"><span class="tag tag-cpf">${fmtMoney(Math.round(stage2CpfUsed))}</span></td>
     <td class="mono">${stage2Cash + (bsd > 0 ? bsd : 0) > 0 ? `<span class="tag tag-cash">${fmtMoney(Math.round(stage2Cash + bsd))}</span>` : '—'}</td>
@@ -1667,7 +1771,7 @@ function calculate() {
   html += `<div style="height:8px;border-bottom:1px solid var(--border);margin:0 -4px;"></div>`;
   html += renderCpfPerson(activeInc2, activeBonus2, age2, cit2, 'Person 2');
   html += `<div class="info-row" style="margin-top:4px;"><span class="key" style="font-weight:600">Combined OA/month</span><span class="val blue" style="font-size:14px">${fmtMoney(Math.round(totalOaMonthly))}/mo</span></div>`;
-  html += `<div class="info-row"><span class="key">Projected OA at key collection (${buildTime} yrs, incl. EHG)</span><span class="val green">${fmtMoney(Math.round(cpfAtKeyCollection + ehg))}</span></div>`;
+  html += `<div class="info-row"><span class="key">Projected OA at key collection (${buildYears}y ${buildMonths}m, incl. EHG)</span><span class="val green">${fmtMoney(Math.round(cpfAtKeyCollection + ehg))}</span></div>`;
 
   html += `</div></div>`;
 
@@ -1692,10 +1796,149 @@ function calculate() {
 
   html += `</div></div>`;
 
+  // Year-by-Year Interest Breakdown button
+  html += `<div class="panel">`;
+  html += `<div class="panel-header"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="3" width="12" height="9" rx="1.5" stroke="#94a3b8" stroke-width="1.2" fill="none"/><path d="M3 8l3-3 3 3 3-3" stroke="#94a3b8" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="panel-title">Interest Breakdown</span></div>`;
+  html += `<div class="panel-body" style="display:flex;flex-direction:column;gap:12px;">`;
+  html += `<div style="font-size:12px;color:var(--text-muted)">See how much interest vs. principal you pay each year over the loan tenure.</div>`;
+  html += `<button class="btn-interest" onclick="renderInterestModal(${Math.round(loanDrawdown)}, ${annualRate}, ${effectiveTenure})">📊 View Year-by-Year Breakdown</button>`;
+  html += `</div></div>`;
+
   col.innerHTML = html;
 }
 
 // Buyer's Stamp Duty (BSD) — Singapore 2024 rates for residential
+// ────────────────────────────────────────────────
+// YEAR-BY-YEAR INTEREST BREAKDOWN
+// ────────────────────────────────────────────────
+
+function generateYearlyBreakdown(loanAmount, annualRate, tenureYears) {
+  const monthlyRate = annualRate / 100 / 12;
+  const nper = tenureYears * 12;
+  const monthlyPayment = pmt(monthlyRate, nper, loanAmount);
+
+  const years = [];
+  let balance = loanAmount;
+  let cumulativeInterest = 0;
+  let cumulativePrincipal = 0;
+
+  for (let year = 1; year <= tenureYears; year++) {
+    const startBalance = balance;
+    let yearInterest = 0;
+    let yearPrincipal = 0;
+
+    for (let month = 1; month <= 12; month++) {
+      if (balance <= 0) break;
+      const interest = balance * monthlyRate;
+      const principal = Math.min(monthlyPayment - interest, balance);
+      yearInterest += interest;
+      yearPrincipal += principal;
+      balance -= principal;
+    }
+
+    cumulativeInterest += yearInterest;
+    cumulativePrincipal += yearPrincipal;
+
+    years.push({
+      year,
+      startBalance,
+      interest: yearInterest,
+      principal: yearPrincipal,
+      endBalance: Math.max(0, balance),
+      cumulativeInterest,
+    });
+  }
+
+  return { years, monthlyPayment, totalInterest: cumulativeInterest };
+}
+
+let interestChartInstance = null;
+
+function showInterestModal() {
+  document.getElementById('interestModal').classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeInterestModal() {
+  document.getElementById('interestModal').classList.remove('show');
+  document.body.style.overflow = '';
+}
+
+function renderInterestModal(loanAmount, annualRate, tenureYears) {
+  const breakdown = generateYearlyBreakdown(loanAmount, annualRate, tenureYears);
+  const { years, monthlyPayment, totalInterest } = breakdown;
+
+  // Render table
+  let tbody = '';
+  for (const y of years) {
+    tbody += `<tr>
+      <td><strong>${y.year}</strong></td>
+      <td class="mono">${fmtMoney(Math.round(y.startBalance))}</td>
+      <td class="mono red">${fmtMoney(Math.round(y.interest))}</td>
+      <td class="mono green">${fmtMoney(Math.round(y.principal))}</td>
+      <td class="mono">${fmtMoney(Math.round(y.endBalance))}</td>
+      <td class="mono amber">${fmtMoney(Math.round(y.cumulativeInterest))}</td>
+    </tr>`;
+  }
+  document.getElementById('yearlyTableBody').innerHTML = tbody;
+
+  // Render chart
+  const ctx = document.getElementById('interestChart').getContext('2d');
+
+  if (interestChartInstance) {
+    interestChartInstance.destroy();
+  }
+
+  interestChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: years.map(y => `Year ${y.year}`),
+      datasets: [
+        {
+          label: 'Interest Paid',
+          data: years.map(y => Math.round(y.interest)),
+          backgroundColor: 'rgba(239, 68, 68, 0.6)',
+          borderColor: '#ef4444',
+          borderWidth: 1,
+        },
+        {
+          label: 'Principal Paid',
+          data: years.map(y => Math.round(y.principal)),
+          backgroundColor: 'rgba(34, 197, 94, 0.6)',
+          borderColor: '#22c55e',
+          borderWidth: 1,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#e2e8f0' } },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              return context.dataset.label + ': S$' + context.raw.toLocaleString();
+            },
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { color: '#94a3b8' }, grid: { color: '#2a3450' } },
+        y: { ticks: { color: '#94a3b8' }, grid: { color: '#2a3450' } },
+      },
+    },
+  });
+
+  showInterestModal();
+}
+
+// Close modal on background click
+document.addEventListener('click', function(e) {
+  const modal = document.getElementById('interestModal');
+  if (e.target === modal) closeInterestModal();
+});
+
 function calcBSD(price) {
   let bsd = 0;
   const bands = [
