@@ -1034,6 +1034,40 @@
   </div>
 </div>
 
+<!-- CPF OA Timeline Modal -->
+<div id="cpfModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>📈 CPF OA Timeline</h3>
+      <button class="modal-close" onclick="closeCpfModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
+        Tracks your CPF OA balance from today through construction and loan repayment. 
+        Green = CPF covers full payment. Red = cash shortfall needed.
+      </div>
+      <div class="chart-container" style="height:350px;">
+        <canvas id="cpfChart"></canvas>
+      </div>
+      <div class="table-container">
+        <table class="stages-table" id="cpfTable">
+          <thead>
+            <tr>
+              <th>Phase</th>
+              <th>Month</th>
+              <th>CPF Balance</th>
+              <th>Monthly Contribution</th>
+              <th>Monthly Deduction</th>
+              <th>Cash Shortfall</th>
+            </tr>
+          </thead>
+          <tbody id="cpfTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 // ────────────────────────────────────────────────
 // DATA TABLES
@@ -1796,6 +1830,14 @@ function calculate() {
   html += `<button class="btn-interest" onclick="renderInterestModal(${Math.round(loanDrawdown)}, ${annualRate}, ${effectiveTenure})">📊 View Year-by-Year Breakdown</button>`;
   html += `</div></div>`;
 
+  // CPF OA Timeline button
+  html += `<div class="panel">`;
+  html += `<div class="panel-header"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M1 7h12" stroke="#94a3b8" stroke-width="1.2" stroke-linecap="round"/></svg><span class="panel-title">CPF OA Timeline</span></div>`;
+  html += `<div class="panel-body" style="display:flex;flex-direction:column;gap:12px;">`;
+  html += `<div style="font-size:12px;color:var(--text-muted)">Visualise your CPF OA balance from today through construction to loan repayment. See when cash shortfall starts.</div>`;
+  html += `<button class="btn-interest" onclick="renderCpfTimelineModal()">📈 View CPF OA Timeline</button>`;
+  html += `</div></div>`;
+
   col.innerHTML = html;
 }
 
@@ -1929,7 +1971,358 @@ function renderInterestModal(loanAmount, annualRate, tenureYears) {
 document.addEventListener('click', function(e) {
   const modal = document.getElementById('interestModal');
   if (e.target === modal) closeInterestModal();
+  const cpfModal = document.getElementById('cpfModal');
+  if (e.target === cpfModal) closeCpfModal();
 });
+
+// ────────────────────────────────────────────────
+// CPF OA TIMELINE
+// ────────────────────────────────────────────────
+
+let cpfChartInstance = null;
+
+function showCpfModal() {
+  document.getElementById('cpfModal').classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeCpfModal() {
+  document.getElementById('cpfModal').classList.remove('show');
+  document.body.style.overflow = '';
+}
+
+function generateCpfTimeline() {
+  // Get all the current form values
+  const flatPrice = parseFloat(document.getElementById('flatPrice').value) || 0;
+  const inc1 = parseFloat(document.getElementById('income1').value) || 0;
+  const inc2 = parseFloat(document.getElementById('income2').value) || 0;
+  const cpf1 = parseFloat(document.getElementById('cpf1').value) || 0;
+  const cpf2 = parseFloat(document.getElementById('cpf2').value) || 0;
+  const age1 = parseInt(document.getElementById('age1').value) || 30;
+  const age2 = parseInt(document.getElementById('age2').value) || 30;
+  const loanType = document.getElementById('loanType').value;
+  const tenure = parseInt(document.getElementById('tenure').value) || 25;
+  const buildYears = parseInt(document.getElementById('buildYears').value) || 3;
+  const buildMonths = parseInt(document.getElementById('buildMonths').value) || 0;
+  const buildTimeMonths = buildYears * 12 + buildMonths;
+  const deferred = document.getElementById('deferred').checked;
+  
+  const futureInc1 = parseFloat(document.getElementById('futureIncome1').value) || inc1;
+  const futureInc2 = parseFloat(document.getElementById('futureIncome2').value) || inc2;
+  
+  // Use future income if deferred, else current
+  const hhi1 = deferred ? futureInc1 : inc1;
+  const hhi2 = deferred ? futureInc2 : inc2;
+  const householdIncome = hhi1 + hhi2;
+  
+  // CPF contribution rates
+  const age = Math.min(age1, age2);
+  const owCeiling = 8000;
+  const oaRatio = age <= 35 ? 0.23 : age <= 45 ? 0.21 : age <= 50 ? 0.185 : age <= 55 ? 0.165 : age <= 60 ? 0.145 : age <= 65 ? 0.11 : 0.095;
+  const oa1Monthly = Math.min(hhi1, owCeiling) * oaRatio;
+  const oa2Monthly = Math.min(hhi2, owCeiling) * oaRatio;
+  const totalOaMonthly = oa1Monthly + oa2Monthly;
+  
+  // EHG
+  const ehg = getEHG(householdIncome);
+  
+  // Loan calculation
+  const annualRate = loanType === 'hdb' ? 2.6 : (parseFloat(document.getElementById('bankRate').value) || 1.6);
+  const monthlyRate = annualRate / 100 / 12;
+  const maxByLTV = flatPrice * 0.75;
+  const msrLimit = householdIncome * 0.30;
+  const maxByMSR = (msrLimit / (monthlyRate * Math.pow(1 + monthlyRate, tenure * 12) / (Math.pow(1 + monthlyRate, tenure * 12) - 1))) || 0;
+  const approvedLoan = Math.min(maxByLTV, maxByMSR);
+  const loanDrawdown = Math.min(approvedLoan, flatPrice * 0.75);
+  
+  // Monthly repayment
+  const monthlyRepayment = pmt(monthlyRate, tenure * 12, loanDrawdown);
+  
+  // Staged payment percentages
+  let stage1Pct = 0.10;
+  let stage2Pct = 0.15;
+  if (loanType === 'bank') {
+    stage1Pct = 0.20;
+    stage2Pct = 0.05;
+  }
+  const stage1Amount = flatPrice * stage1Pct;
+  const stage2Amount = flatPrice * stage2Pct;
+  
+  // CPF savings rate
+  const cpfSavingsRate = 0.025 / 12; // monthly
+  
+  // Build timeline month by month
+  const timeline = [];
+  let currentCpf = cpf1 + cpf2;
+  
+  // Phase 1: Construction (until key collection)
+  // Stage 1 payment happens at some point during construction
+  const stage1Month = Math.floor(buildTimeMonths * 0.3); // ~30% through construction
+  const stage2Month = buildTimeMonths; // at key collection
+  
+  for (let month = 0; month <= buildTimeMonths + tenure * 12; month++) {
+    let phase = '';
+    let deduction = 0;
+    let contribution = totalOaMonthly;
+    let event = '';
+    
+    if (month === 0) {
+      phase = 'Start';
+      event = 'Today';
+    } else if (month < stage1Month) {
+      phase = 'Construction';
+    } else if (month === stage1Month) {
+      phase = 'Stage 1';
+      deduction = stage1Amount;
+      event = `Stage 1 payment (${(stage1Pct * 100).toFixed(0)}%)`;
+    } else if (month < stage2Month) {
+      phase = 'Construction';
+    } else if (month === stage2Month) {
+      phase = 'Key Collection';
+      deduction = stage2Amount;
+      currentCpf += ehg; // EHG credited
+      event = `Key collection + EHG S$${(ehg / 1000).toFixed(0)}k`;
+    } else if (month > stage2Month) {
+      phase = 'Repayment';
+      deduction = monthlyRepayment;
+    }
+    
+    // Apply CPF interest
+    currentCpf = currentCpf * (1 + cpfSavingsRate) + contribution - deduction;
+    currentCpf = Math.max(0, currentCpf);
+    
+    const shortfall = Math.max(0, deduction - contribution);
+    
+    timeline.push({
+      month,
+      phase,
+      balance: currentCpf,
+      contribution,
+      deduction,
+      shortfall,
+      event,
+    });
+  }
+  
+  return {
+    timeline,
+    monthlyRepayment,
+    totalOaMonthly,
+    ehg,
+    stage1Month,
+    stage2Month,
+  };
+}
+
+function renderCpfTimelineModal() {
+  const data = generateCpfTimeline();
+  const { timeline, monthlyRepayment, totalOaMonthly, ehg, stage1Month, stage2Month } = data;
+  
+  // Render table (show every 12 months + milestone months)
+  const milestoneMonths = [0, stage1Month, stage2Month];
+  const tableRows = timeline.filter((t, i) => 
+    milestoneMonths.includes(t.month) || 
+    t.month % 12 === 0 || 
+    t.shortfall > 0 && (i === 0 || timeline[i-1].shortfall === 0)
+  );
+  
+  let tbody = '';
+  for (const t of tableRows) {
+    const year = Math.floor(t.month / 12);
+    const monthInYear = t.month % 12;
+    const dateLabel = t.month === 0 ? 'Today' : 
+                      t.month === stage1Month ? `Month ${t.month} (Stage 1)` :
+                      t.month === stage2Month ? `Month ${t.month} (Keys)` :
+                      `Year ${year}, Month ${monthInYear}`;
+    
+    tbody += `<tr>
+      <td><strong>${t.phase}</strong>${t.event ? `<br><span style="font-size:10px;color:var(--text-dim)">${t.event}</span>` : ''}</td>
+      <td>${dateLabel}</td>
+      <td class="mono ${t.balance < 10000 ? 'red' : 'green'}">${fmtMoney(Math.round(t.balance))}</td>
+      <td class="mono green">+${fmtMoney(Math.round(t.contribution))}</td>
+      <td class="mono red">-${fmtMoney(Math.round(t.deduction))}</td>
+      <td class="mono ${t.shortfall > 0 ? 'red' : 'green'}">${t.shortfall > 0 ? 'S$' + fmtMoney(Math.round(t.shortfall)) + '/mo' : 'None'}</td>
+    </tr>`;
+  }
+  document.getElementById('cpfTableBody').innerHTML = tbody;
+  
+  // Render chart
+  const ctx = document.getElementById('cpfChart').getContext('2d');
+  
+  if (cpfChartInstance) {
+    cpfChartInstance.destroy();
+  }
+  
+  // Find when shortfall starts
+  const shortfallStart = timeline.findIndex(t => t.shortfall > 0);
+  const shortfallMonth = shortfallStart >= 0 ? timeline[shortfallStart].month : null;
+  
+  // Create datasets
+  const labels = timeline.map(t => {
+    const year = Math.floor(t.month / 12);
+    const month = t.month % 12;
+    if (t.month === 0) return 'Today';
+    if (t.month === stage1Month) return 'Stage 1';
+    if (t.month === stage2Month) return 'Key Coll.';
+    if (month === 0) return `Y${year}`;
+    return '';
+  });
+  
+  const balanceData = timeline.map(t => Math.round(t.balance));
+  const shortfallData = timeline.map(t => Math.round(t.shortfall));
+  
+  // Create annotation plugin data for milestones
+  const annotations = {};
+  if (stage1Month > 0) {
+    annotations['stage1'] = {
+      type: 'line',
+      xMin: stage1Month,
+      xMax: stage1Month,
+      borderColor: 'rgba(245, 158, 11, 0.5)',
+      borderWidth: 2,
+      label: {
+        content: 'Stage 1',
+        position: 'start',
+        color: '#f59e0b',
+        font: { size: 10 },
+      },
+    };
+  }
+  if (stage2Month > 0) {
+    annotations['stage2'] = {
+      type: 'line',
+      xMin: stage2Month,
+      xMax: stage2Month,
+      borderColor: 'rgba(59, 130, 246, 0.5)',
+      borderWidth: 2,
+      label: {
+        content: 'Key Collection',
+        position: 'start',
+        color: '#3b82f6',
+        font: { size: 10 },
+      },
+    };
+  }
+  if (shortfallMonth !== null) {
+    annotations['shortfall'] = {
+      type: 'line',
+      xMin: shortfallMonth,
+      xMax: shortfallMonth,
+      borderColor: 'rgba(239, 68, 68, 0.5)',
+      borderWidth: 2,
+      borderDash: [5, 5],
+      label: {
+        content: 'Cash Shortfall Starts',
+        position: 'end',
+        color: '#ef4444',
+        font: { size: 10 },
+      },
+    };
+  }
+  
+  cpfChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: timeline.map((t, i) => i),
+      datasets: [
+        {
+          label: 'CPF OA Balance',
+          data: balanceData,
+          borderColor: '#3b82f6',
+          backgroundColor: 'rgba(59, 130, 246, 0.1)',
+          fill: true,
+          tension: 0.4,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+        },
+        {
+          label: 'Cash Shortfall / Month',
+          data: shortfallData,
+          borderColor: '#ef4444',
+          backgroundColor: 'rgba(239, 68, 68, 0.1)',
+          fill: true,
+          tension: 0.4,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          yAxisID: 'y1',
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: 'index',
+        intersect: false,
+      },
+      plugins: {
+        legend: { labels: { color: '#e2e8f0' } },
+        tooltip: {
+          callbacks: {
+            title: function(context) {
+              const idx = context[0].dataIndex;
+              const t = timeline[idx];
+              const year = Math.floor(t.month / 12);
+              const month = t.month % 12;
+              if (t.month === 0) return 'Today';
+              if (t.month === stage1Month) return 'Stage 1 Payment';
+              if (t.month === stage2Month) return 'Key Collection';
+              return `Year ${year}, Month ${month}`;
+            },
+            label: function(context) {
+              const idx = context.dataIndex;
+              const t = timeline[idx];
+              if (context.dataset.label === 'CPF OA Balance') {
+                return `CPF Balance: S$${t.balance.toLocaleString(undefined, {maximumFractionDigits:0})}`;
+              } else {
+                return t.shortfall > 0 
+                  ? `Cash Shortfall: S$${t.shortfall.toLocaleString(undefined, {maximumFractionDigits:0})}/mo`
+                  : 'No shortfall (CPF covers payment)';
+              }
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          display: true,
+          ticks: {
+            color: '#94a3b8',
+            maxTicksLimit: 15,
+            callback: function(value, index) {
+              const t = timeline[index];
+              if (!t) return '';
+              if (t.month === 0) return 'Today';
+              if (t.month === stage1Month) return 'S1';
+              if (t.month === stage2Month) return 'Keys';
+              if (t.month % 12 === 0) return `Y${t.month/12}`;
+              return '';
+            },
+          },
+          grid: { color: '#2a3450' },
+        },
+        y: {
+          type: 'linear',
+          display: true,
+          position: 'left',
+          ticks: { color: '#94a3b8' },
+          grid: { color: '#2a3450' },
+          title: { display: true, text: 'CPF Balance (S$)', color: '#94a3b8' },
+        },
+        y1: {
+          type: 'linear',
+          display: true,
+          position: 'right',
+          ticks: { color: '#ef4444' },
+          grid: { drawOnChartArea: false },
+          title: { display: true, text: 'Cash Shortfall (S$)', color: '#ef4444' },
+        },
+      },
+    },
+  });
+  
+  showCpfModal();
+}
 
 function calcBSD(price) {
   let bsd = 0;
