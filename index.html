@@ -1554,6 +1554,7 @@ function calculate() {
   const cashShortfall = Math.max(0, monthlyRepayment - totalOaMonthly);
 
   // ── CPF interest perspective (for net financing cost view) ──
+  const totalMonthsToKeys = monthsToAGL + buildTimeMonths;
   const cpfInterestModel = estimateCpfInterestEarned({
     initialCpf: currentTotalCpf,
     oaMonthly: totalOaMonthly,
