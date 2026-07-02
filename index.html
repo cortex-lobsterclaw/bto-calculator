@@ -1618,19 +1618,6 @@ function calculate() {
     return;
   }
 
-  // Store key values for timeline chart (so it uses same numbers as main calculator)
-  window.lastCalc = {
-    flatPrice, loanType, deferred, staggered, buildTimeMonths,
-    inc1, inc2, cpf1, cpf2, age1, age2,
-    futureInc1, futureInc2,
-    ehg, bsd, approvedLoan, loanDrawdown,
-    stage1Amount, stage2Amount, stage1CpfUsed, stage1Cash, stage2CpfUsed, stage2Cash,
-    cpfAtAGL, cpfAtKeyCollection,
-    totalOaMonthly, monthlyRepayment,
-    annualRate, effectiveTenure,
-    totalCashNeeded,
-  };
-
   updateShareUrl();
 
   let html = '';
@@ -1821,6 +1808,19 @@ function calculate() {
 
   const totalCashNeeded = bookingFee + stage1Cash + stage2Cash + bsd + (cpfCoversFullPayment ? 0 : cashShortfall * effectiveNper);
   const totalCpfNeeded = stage1CpfUsed + stage2CpfUsed + (cpfCoversFullPayment ? monthlyRepayment * effectiveNper : totalOaMonthly * effectiveNper);
+
+  // Store key values for timeline chart (so it uses same numbers as main calculator)
+  window.lastCalc = {
+    flatPrice, loanType, deferred, staggered, buildTimeMonths,
+    inc1, inc2, cpf1, cpf2, age1, age2,
+    futureInc1, futureInc2,
+    ehg, bsd, approvedLoan, loanDrawdown,
+    stage1Amount, stage2Amount, stage1CpfUsed, stage1Cash, stage2CpfUsed, stage2Cash,
+    cpfAtAGL, cpfAtKeyCollection,
+    totalOaMonthly, monthlyRepayment,
+    annualRate, effectiveTenure,
+    totalCashNeeded,
+  };
 
   html += `<div class="info-row"><span class="key">Flat purchase price</span><span class="val">${fmtMoney(flatPrice)}</span></div>`;
   html += `<div class="info-row"><span class="key">Loan drawdown</span><span class="val">${fmtMoney(Math.round(loanDrawdown))}</span></div>`;
